@@ -1,3 +1,4 @@
+
 class SnippetsController < ApplicationController
   before_action :set_snippet, only: [:show, :edit, :update, :destroy]
 
@@ -34,7 +35,6 @@ class SnippetsController < ApplicationController
         render :new
       end
     end
-  end
 
   # PATCH/PUT /snippets/1
   # PATCH/PUT /snippets/1.json
