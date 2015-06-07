@@ -2,12 +2,12 @@
 machine:
 
   timezone:
-    London/Europe # Set the timezone
+   Europe/London # Set the timezone
 
   # Version of ruby to use
   ruby:
     version:
-      2.1.4
+      2.1.4-p265
 
   # Override /etc/hosts
   hosts:
