@@ -1,0 +1,696 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS CloudFormation Template: Creates thedotts web application.",
+    "Parameters": {
+        "KeyName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+        },
+        "DBName": {
+            "Default": "rubyonrails",
+            "Description": "MySQL database name",
+            "Type": "String",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
+        },
+        "DBUser": {
+            "NoEcho": "true",
+            "Description": "Username for MySQL database access",
+            "Type": "String",
+            "MinLength": "1",
+            "MaxLength": "16",
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
+        },
+        "DBPassword": {
+            "NoEcho": "true",
+            "Description": "Password for MySQL database access",
+            "Type": "String",
+            "MinLength": "8",
+            "MaxLength": "41",
+            "AllowedPattern": "[a-zA-Z0-9]*",
+            "ConstraintDescription": "must contain only alphanumeric characters."
+        },
+        "DBRootPassword": {
+            "NoEcho": "true",
+            "Description": "Root password for MySQL",
+            "Type": "String",
+            "MinLength": "1",
+            "MaxLength": "41",
+            "AllowedPattern": "[a-zA-Z0-9]*",
+            "ConstraintDescription": "must contain only alphanumeric characters."
+        },
+        "DNSName": {
+            "Description": "DNS Name for the Application",
+            "Type": "String",
+            "Default": "rubyonrails"
+        },
+        "DNSDomain": {
+            "Description": "DNS Name for the Application",
+            "Type": "String",
+            "Default": "dcrbsltd.com"
+        },
+        "InstanceType": {
+            "Description": "WebServer EC2 instance type",
+            "Type": "String",
+            "Default": "t2.small",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "GithubUrl": {
+            "Description": "Url for a Github repo to clone",
+            "Type": "String",
+            "Default": "https://github.com/dcrbsltd/aws-ec2-rubyonrails.git"
+        }
+    },
+    "Mappings": {
+        "AWSRegion2HostedZoneId": {
+            "eu-west-1": {
+                "HostedZoneId": "Z1BKCTXD74EZPE"
+            },
+            "eu-central-1": {
+                "HostedZoneId": "Z21DNDUVLTQW6Q"
+            }
+        },
+        "AWSInstanceType2Arch": {
+            "t1.micro": {
+                "Arch": "PV64"
+            },
+            "t2.micro": {
+                "Arch": "HVM64"
+            },
+            "t2.small": {
+                "Arch": "HVM64"
+            },
+            "t2.medium": {
+                "Arch": "HVM64"
+            }
+        },
+        "AWSRegionArch2AMI": {
+            "eu-west-1": {
+                "PV64": "ami-aa8f28dd",
+                "HVM64": "ami-748e2903",
+                "HVMG2": "ami-00913777"
+            },
+            "eu-central-1": {
+                "PV64": "ami-a03503bd",
+                "HVM64": "ami-b43503a9",
+                "HVMG2": "ami-b03503ad"
+            }
+        }
+    },
+    "Conditions": {
+        "Is-EC2-VPC": {
+            "Fn::Or": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "eu-central-1"
+                    ]
+                },
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "cn-north-1"
+                    ]
+                }
+            ]
+        },
+        "Is-EC2-Classic": {
+            "Fn::Not": [
+                {
+                    "Condition": "Is-EC2-VPC"
+                }
+            ]
+        }
+    },
+    "Resources": {
+        "IAMRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/"
+            }
+        },
+        "InstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "DependsOn": "IAMRole",
+            "Properties": {
+                "Roles": [
+                    {
+                        "Ref": "IAMRole"
+                    }
+                ]
+            }
+        },
+        "RolePolicies": {
+            "Type": "AWS::IAM::Policy",
+            "DependsOn": "IAMRole",
+            "Properties": {
+                "PolicyName": "InstancePolicy",
+                "PolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "ec2:Describe*"
+                            ],
+                            "Resource": "*"
+                        }
+                    ]
+                },
+                "Roles": [
+                    {
+                        "Ref": "IAMRole"
+                    }
+                ]
+            }
+        },
+        "EIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "InstanceId": {
+                    "Ref": "EC2Instance"
+                }
+            }
+        },
+        "EC2Instance": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "full_install": [
+                            "install_cfn",
+                            "configure_nginx_mysql",
+                            "install_application"
+                        ]
+                    },
+                    "install_cfn": {
+                        "files": {
+                            "/etc/cfn/cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000400",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.EC2Instance.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=/opt/aws/bin/cfn-init -v ",
+                                            "         --stack ",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "         --resource EC2Instance ",
+                                            "         --configsets full_install ",
+                                            "         --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n",
+                                            "runas=root\n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "/etc/cfn/cfn-hup.conf",
+                                        "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "configure_nginx_mysql": {
+                        "packages": {
+                            "yum": {
+                                "nginx": [],
+                                "mysql": [],
+                                "mysql-server": [],
+                                "mysql-devel": [],
+                                "mysql-libs": []
+                            }
+                        },
+                        "commands": {
+                            "01_set_mysql_root_password": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "service mysqld start && mysqladmin -u root password '",
+                                            {
+                                                "Ref": "DBRootPassword"
+                                            },
+                                            "'"
+                                        ]
+                                    ]
+                                },
+                                "test": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "$(mysql ",
+                                            {
+                                                "Ref": "DBName"
+                                            },
+                                            " -u root --password='",
+                                            {
+                                                "Ref": "DBRootPassword"
+                                            },
+                                            "' >/dev/null 2>&1 </dev/null); (( $? != 0 ))"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "02_create_database": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "mysql -u root --password='",
+                                            {
+                                                "Ref": "DBRootPassword"
+                                            },
+                                            "' < /tmp/setup.mysql"
+                                        ]
+                                    ]
+                                },
+                                "test": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "$(mysql ",
+                                            {
+                                                "Ref": "DBName"
+                                            },
+                                            " -u root --password='",
+                                            {
+                                                "Ref": "DBRootPassword"
+                                            },
+                                            "' >/dev/null 2>&1 </dev/null); (( $? != 0 ))"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "03_cleanup": {
+                                "command": "#rm /tmp/setup.mysql"
+                            }
+                        },
+                        "files": {
+                            "/tmp/setup.mysql": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "CREATE DATABASE ",
+                                            {
+                                                "Ref": "DBName"
+                                            },
+                                            ";\n",
+                                            "CREATE USER '",
+                                            {
+                                                "Ref": "DBUser"
+                                            },
+                                            "'@'localhost' IDENTIFIED BY '",
+                                            {
+                                                "Ref": "DBPassword"
+                                            },
+                                            "';\n",
+                                            "GRANT ALL ON ",
+                                            {
+                                                "Ref": "DBName"
+                                            },
+                                            ".* TO '",
+                                            {
+                                                "Ref": "DBUser"
+                                            },
+                                            "'@'localhost';\n",
+                                            "FLUSH PRIVILEGES;\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000400",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/etc/rubyonrails/database.yml": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "production:\n",
+                                            "  adapter: mysql2\n",
+                                            "  encoding: utf8\n",
+                                            "  reconnect: false\n",
+                                            "  pool: 5\n",
+                                            "  database: ",
+                                            {
+                                                "Ref": "DBName"
+                                            },
+                                            "\n",
+                                            "  username: ",
+                                            {
+                                                "Ref": "DBUser"
+                                            },
+                                            "\n",
+                                            "  password: ",
+                                            {
+                                                "Ref": "DBPassword"
+                                            },
+                                            "\n",
+                                            "  host: localhost\n",
+                                            "  port: 3360\n",
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000644",
+                                "owner": "ec2-user",
+                                "group": "ec2-user"
+                            },
+                            "/etc/nginx/conf.d/rubyonrails.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "upstream app {\n",
+                                            "  server unix:/tmp/unicorn.sock fail_timeout=0;\n",
+                                            "}\n",
+                                            "server {\n",
+                                            "  listen 80;\n",
+                                            "  server_name localhost;\n",
+                                            "  root /home/ec2-user/rubyonrails/public;\n",
+                                            "  try_files $uri/index.html $uri @app;\n",
+                                            "  location @app {\n",
+                                            "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n",
+                                            "    proxy_set_header Host $http_host;\n",
+                                            "    proxy_redirect off;\n",
+                                            "    proxy_pass http://app;\n",
+                                            "  }\n",
+                                            "  gzip on;\n",
+                                            "  gzip_types application/json text/css;\n",
+                                            "  error_page 404 /404.html;\n",
+                                            "  error_page 500 502 503 504 /500.html;\n",
+                                            "  client_max_body_size 4G;\n",
+                                            "  keepalive_timeout 10;\n",
+                                            "}\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "mysqld": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true"
+                                },
+                                "nginx": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "/etc/nginx/nginx.conf",
+                                        "/etc/nginx/conf.d/rubyonrails.conf"
+                                    ],
+                                    "sources": [
+                                        "/home/ec2-user/latest"
+                                    ]
+                                },
+                                "elasticsearch": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true"
+                                }
+                            }
+                        }
+                    },
+                    "install_application": {
+                        "packages": {
+                            "yum": {
+                                "gcc-c++": [],
+                                "make": [],
+                                "git": [],
+                                "libxml2": [],
+                                "libxml2-devel": [],
+                                "libxslt": [],
+                                "libxslt-devel": [],
+                                "patch": [],
+                                "sqlite-devel": [],
+                                "ruby-devel": [],
+                                "rubygems": [],
+                                "rubygem-io-console": [],
+                                "ImageMagick-devel": []
+                            },
+                            "rubygems": {
+                                "rails": [],
+                                "unicorn": []
+                            }
+                        },
+                        "files": {
+                            "/tmp/install_application": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "#!/bin/bash -xe\n",
+                                            "export PATH=$PATH:/usr/local/bin\n",
+                                            "export RAILS_ENV=production\n",
+                                            "cd /home/ec2-user\n",
+                                            "if pgrep ruby &> /dev/null ; then pkill -TERM ruby ; fi\n",
+                                            "git clone ",
+                                            {
+                                              "Ref": "GithubUrl"  
+                                            },
+                                            " rubyonrails\n",
+                                            "ln -sf /etc/rubyonrails/database.yml /home/ec2-user/rubyonrails/config/database.yml\n",
+                                            "bundle install --deployment\n",
+                                            "bundle exec rake db:migrate\n",
+                                            "bundle exec rake assets:precompile\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000555",
+                                "owner": "ec2-user",
+                                "group": "ec2-user"
+                            }
+                        },
+                        "commands": {
+                            "install_application": {
+                                "command": "su ec2-user -c /tmp/install_application > /var/log/install_application.log 2>&1"
+                            },
+                            "01_create_symlinks": {
+                                "command": "rm -rf /etc/init.d/unicorn; ln -s /home/ec2-user/latest/ext/unicorn/unicorn_init /etc/init.d/unicorn"
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "unicorn": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "IamInstanceProfile": {
+                    "Ref": "InstanceProfile"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSRegionArch2AMI",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        {
+                            "Fn::FindInMap": [
+                                "AWSInstanceType2Arch",
+                                {
+                                    "Ref": "InstanceType"
+                                },
+                                "Arch"
+                            ]
+                        }
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "WebServerSecurityGroup"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "DNSName"
+                                    },
+                                    ".",
+                                    {
+                                        "Ref": "DNSDomain"
+                                    }
+                                ]
+                            ]
+                        }
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xe\n",
+                                "yum update -y aws-cfn-bootstrap\n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                "         --resource EC2Instance ",
+                                "         --configsets full_install ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "/opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                "         --resource EC2Instance ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "WebServerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable HTTP access via port 80",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "SSHLocation"
+                        }
+                    }
+                ]
+            }
+        },
+        "RecordSet": {
+            "Type": "AWS::Route53::RecordSet",
+            "Properties": {
+                "HostedZoneName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            {
+                                "Ref": "DNSDomain"
+                            },
+                            "."
+                        ]
+                    ]
+                },
+                "Comment": "RubyOnRails application.",
+                "Name": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            {
+                                "Ref": "DNSName"
+                            },
+                            "."
+                        ]
+                    ]
+                },
+                "Type": "A",
+                "TTL": "900",
+                "ResourceRecords": [
+                    {
+                        "Ref": "EIP"
+                    }
+                ]
+            }
+        }
+    }
+}
