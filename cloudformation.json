@@ -5,43 +5,8 @@
         "KeyName": {
             "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
             "Type": "AWS::EC2::KeyPair::KeyName",
-            "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
-        },
-        "DBName": {
-            "Default": "rubyonrails",
-            "Description": "MySQL database name",
-            "Type": "String",
-            "MinLength": "1",
-            "MaxLength": "64",
-            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
-            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
-        },
-        "DBUser": {
-            "NoEcho": "true",
-            "Description": "Username for MySQL database access",
-            "Type": "String",
-            "MinLength": "1",
-            "MaxLength": "16",
-            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
-            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
-        },
-        "DBPassword": {
-            "NoEcho": "true",
-            "Description": "Password for MySQL database access",
-            "Type": "String",
-            "MinLength": "8",
-            "MaxLength": "41",
-            "AllowedPattern": "[a-zA-Z0-9]*",
-            "ConstraintDescription": "must contain only alphanumeric characters."
-        },
-        "DBRootPassword": {
-            "NoEcho": "true",
-            "Description": "Root password for MySQL",
-            "Type": "String",
-            "MinLength": "1",
-            "MaxLength": "41",
-            "AllowedPattern": "[a-zA-Z0-9]*",
-            "ConstraintDescription": "must contain only alphanumeric characters."
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair.",
+            "Default": "default"
         },
         "DNSName": {
             "Description": "DNS Name for the Application",
@@ -50,8 +15,7 @@
         },
         "DNSDomain": {
             "Description": "DNS Name for the Application",
-            "Type": "String",
-            "Default": "dcrbsltd.com"
+            "Type": "String"
         },
         "InstanceType": {
             "Description": "WebServer EC2 instance type",
@@ -206,7 +170,7 @@
                     "configSets": {
                         "full_install": [
                             "install_cfn",
-                            "configure_nginx_mysql",
+                            "configure_nginx",
                             "install_application"
                         ]
                     },
@@ -274,153 +238,13 @@
                             }
                         }
                     },
-                    "configure_nginx_mysql": {
+                    "configure_nginx": {
                         "packages": {
                             "yum": {
-                                "nginx": [],
-                                "mysql": [],
-                                "mysql-server": [],
-                                "mysql-devel": [],
-                                "mysql-libs": []
-                            }
-                        },
-                        "commands": {
-                            "01_set_mysql_root_password": {
-                                "command": {
-                                    "Fn::Join": [
-                                        "",
-                                        [
-                                            "service mysqld start && mysqladmin -u root password '",
-                                            {
-                                                "Ref": "DBRootPassword"
-                                            },
-                                            "'"
-                                        ]
-                                    ]
-                                },
-                                "test": {
-                                    "Fn::Join": [
-                                        "",
-                                        [
-                                            "$(mysql ",
-                                            {
-                                                "Ref": "DBName"
-                                            },
-                                            " -u root --password='",
-                                            {
-                                                "Ref": "DBRootPassword"
-                                            },
-                                            "' >/dev/null 2>&1 </dev/null); (( $? != 0 ))"
-                                        ]
-                                    ]
-                                }
-                            },
-                            "02_create_database": {
-                                "command": {
-                                    "Fn::Join": [
-                                        "",
-                                        [
-                                            "mysql -u root --password='",
-                                            {
-                                                "Ref": "DBRootPassword"
-                                            },
-                                            "' < /tmp/setup.mysql"
-                                        ]
-                                    ]
-                                },
-                                "test": {
-                                    "Fn::Join": [
-                                        "",
-                                        [
-                                            "$(mysql ",
-                                            {
-                                                "Ref": "DBName"
-                                            },
-                                            " -u root --password='",
-                                            {
-                                                "Ref": "DBRootPassword"
-                                            },
-                                            "' >/dev/null 2>&1 </dev/null); (( $? != 0 ))"
-                                        ]
-                                    ]
-                                }
-                            },
-                            "03_cleanup": {
-                                "command": "#rm /tmp/setup.mysql"
+                                "nginx": []
                             }
                         },
                         "files": {
-                            "/tmp/setup.mysql": {
-                                "content": {
-                                    "Fn::Join": [
-                                        "",
-                                        [
-                                            "CREATE DATABASE ",
-                                            {
-                                                "Ref": "DBName"
-                                            },
-                                            ";\n",
-                                            "CREATE USER '",
-                                            {
-                                                "Ref": "DBUser"
-                                            },
-                                            "'@'localhost' IDENTIFIED BY '",
-                                            {
-                                                "Ref": "DBPassword"
-                                            },
-                                            "';\n",
-                                            "GRANT ALL ON ",
-                                            {
-                                                "Ref": "DBName"
-                                            },
-                                            ".* TO '",
-                                            {
-                                                "Ref": "DBUser"
-                                            },
-                                            "'@'localhost';\n",
-                                            "FLUSH PRIVILEGES;\n"
-                                        ]
-                                    ]
-                                },
-                                "mode": "000400",
-                                "owner": "root",
-                                "group": "root"
-                            },
-                            "/etc/rubyonrails/database.yml": {
-                                "content": {
-                                    "Fn::Join": [
-                                        "",
-                                        [
-                                            "production:\n",
-                                            "  adapter: mysql2\n",
-                                            "  encoding: utf8\n",
-                                            "  reconnect: false\n",
-                                            "  pool: 5\n",
-                                            "  database: ",
-                                            {
-                                                "Ref": "DBName"
-                                            },
-                                            "\n",
-                                            "  username: ",
-                                            {
-                                                "Ref": "DBUser"
-                                            },
-                                            "\n",
-                                            "  password: ",
-                                            {
-                                                "Ref": "DBPassword"
-                                            },
-                                            "\n",
-                                            "  host: localhost\n",
-                                            "  port: 3360\n",
-                                            "\n"
-                                        ]
-                                    ]
-                                },
-                                "mode": "000644",
-                                "owner": "ec2-user",
-                                "group": "ec2-user"
-                            },
                             "/etc/nginx/conf.d/rubyonrails.conf": {
                                 "content": {
                                     "Fn::Join": [
@@ -517,10 +341,8 @@
                                               "Ref": "GithubUrl"  
                                             },
                                             " rubyonrails\n",
-                                            "ln -sf /etc/rubyonrails/database.yml /home/ec2-user/rubyonrails/config/database.yml\n",
                                             "bundle install --deployment\n",
-                                            "bundle exec rake db:migrate\n",
-                                            "bundle exec rake assets:precompile\n"
+                                            "bundle exec rake db:migrate\n"
                                         ]
                                     ]
                                 },

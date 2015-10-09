@@ -1,0 +1,18 @@
+/System/Library/Frameworks/Ruby.framework/Versions/2.0/usr/bin/ruby -r ./siteconf20151009-23852-13q8kjy.rb extconf.rb
+creating Makefile
+
+make "DESTDIR=" clean
+
+make "DESTDIR="
+compiling breakpoint.c
+compiling byebug.c
+compiling context.c
+compiling locker.c
+compiling threads.c
+linking shared-object byebug/byebug.bundle
+ld: warning: directory not found for option '-L/usr/local/lib'
+ld: warning: directory not found for option '-L/usr/local/lib'
+
+make "DESTDIR=" install
+/usr/bin/install -c -m 0755 byebug.bundle ./.gem.20151009-23852-1l9yyr4/byebug
+installing default byebug libraries
