@@ -25,7 +25,7 @@ aws cloudformation create-stack \
   --template-body file://cloudformation.json \
   --capabilities CAPABILITY_IAM \
   --output text \
-  --parameters ParameterKey=DomainName,ParameterValue=$DOMAIN_NAME > /dev/null 2>&1
+  --parameters ParameterKey=DNSDomain,ParameterValue=$DOMAIN_NAME > /dev/null 2>&1
 
 echo " --> Watching stack progress, please wait..."
 STACK_STATUS=CREATE_IN_PROGRESS
