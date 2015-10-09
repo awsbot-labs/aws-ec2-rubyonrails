@@ -31,7 +31,7 @@ ENV=production
 start() {
     echo -n $"Starting $prog: "
     cd $RAILS_ROOT
-    /usr/local/bin/bundle exec unicorn -c $UNICORN_CONF -E $ENV -D
+    /usr/local/bin/unicorn -c $UNICORN_CONF -E $ENV -D
     RETVAL=$?
     echo
     [ $RETVAL = 0 ] && touch ${lockfile}
